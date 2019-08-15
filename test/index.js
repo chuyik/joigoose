@@ -17,8 +17,10 @@ const Any = Joi.any.bind(Joi);
 
 // Test shortcuts
 const Code = require("code");
-const Lab = require("lab");
+const Lab = require("@hapi/lab");
 const lab = (module.exports.lab = Lab.script());
+
+Mongoose.connect('mongodb://localhost:27017/joigoose', { useNewUrlParser: true, useMongoClient: true })
 
 const { describe, it, before } = lab;
 const { expect, fail } = Code;
@@ -874,5 +876,68 @@ describe("Joigoose integration tests", () => {
 
       expect(newUser.addresses[0]._id).to.exist();
     });
+
+    it("should support $inc", async () => {
+      const joiSchema = O({
+        hits: N(),
+    
+        params: Joi.object()
+      });
+      
+      const mongooseSchema = Joigoose.convert(joiSchema);
+      const EventTracking = Mongoose.model("incDoc", mongooseSchema);
+
+      let doc = await EventTracking.create(
+        { hits: 1 }
+      )
+
+      const updated = await EventTracking.updateOne(
+        { _id: doc._id },
+        {
+          $inc: { hits: 1, 'params.a': 1 },
+        },
+      )
+
+      const newDoc = await EventTracking.findById(doc._id)
+    
+      await EventTracking.deleteMany({})
+
+      expect(updated.nModified).to.be.equal(1);
+      expect(newDoc.hits).to.be.equal(2);
+      expect(newDoc.params.a).to.be.equal(1);
+    });
+
+    it("should support $inc on upsert", async () => {
+      const joiSchema = O({
+        name: S(),
+        hits: N(),
+        params: Joi.object()
+      });
+  
+      const mongooseSchema = Joigoose.convert(joiSchema);
+      const EventTracking = Mongoose.model("incDoc2", mongooseSchema);
+  
+      let doc = await EventTracking.update(
+        { name: Math.random() },
+        { 
+          $setOnInsert: { name: 'test' },
+          $inc: {
+            hits: 1, 'params.a': 1
+          }
+        },
+        { upsert: true } 
+      )
+  
+      expect(doc.upserted).to.be.array;
+      
+      let id = doc.upserted[0]._id
+      const newDoc = await EventTracking.findById(id)
+
+      await EventTracking.deleteMany({})
+      
+      expect(newDoc.hits).to.be.equal(1);
+      expect(newDoc.params.a).to.be.equal(1);
+    });
   });
+
 });
